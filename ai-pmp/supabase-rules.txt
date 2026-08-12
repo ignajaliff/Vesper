@@ -1,0 +1,285 @@
+# Supabase Rules — Next.js (@supabase/ssr)
+
+Supabase es el backend principal. En Next se accede vía `@supabase/ssr` (NUNCA `@supabase/auth-helpers-nextjs`, deprecado).
+
+## Flujo obligatorio para cada feature con datos
+
+1. Crear la tabla con campos estándar + constraints + trigger `updated_at`
+2. Habilitar RLS
+3. Políticas RLS según roles (con `WITH CHECK` en escritura)
+4. Tipos TypeScript
+5. Funciones del DAL (lectura server) y/o Server Actions (mutaciones)
+
+## Los tres clientes de Supabase
+
+Cada contexto de Next usa SU cliente. Nunca crear instancias sueltas.
+
+### 1. Browser client — `integrations/supabase/client.ts` (Client Components)
+
+```ts
+import { createBrowserClient } from "@supabase/ssr"
+import { type Database } from "./types"
+
+export function createClient() {
+  return createBrowserClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+}
+```
+
+### 2. Server client — `integrations/supabase/server.ts` (Server Components, Server Actions, Route Handlers)
+
+```ts
+import { createServerClient } from "@supabase/ssr"
+import { cookies } from "next/headers"
+import { type Database } from "./types"
+
+export async function createClient() {
+  const cookieStore = await cookies()
+  return createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() { return cookieStore.getAll() },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options))
+          } catch {
+            // Llamado desde un Server Component: ignorar, el proxy refresca la sesión
+          }
+        },
+      },
+    }
+  )
+}
+```
+
+### 3. Proxy client — `proxy.ts` (refresco de sesión)
+
+`proxy.ts` reemplaza a `middleware.ts` en Next 16 (mismo concepto, nuevo nombre y exporta `proxy`). Su ÚNICA tarea de auth es refrescar la sesión y redirigir no-autenticados por UX. NO es la barrera de seguridad.
+
+> **Reglas absolutas de los clientes** (de la doc oficial):
+> 1. Usar SOLO `getAll` y `setAll`. NUNCA `get`, `set`, `remove`.
+> 2. NUNCA importar de `@supabase/auth-helpers-nextjs`.
+
+## getUser vs getSession — CRÍTICO
+
+Para CUALQUIER decisión de autorización en el server, usar `supabase.auth.getUser()` (revalida el token contra el servidor de Supabase) o `getClaims()`. NUNCA `getSession()` para decidir permisos: lee la cookie sin verificar y se puede falsificar.
+
+```ts
+const { data: { user } } = await supabase.auth.getUser()
+if (!user) redirect("/auth/login")
+```
+
+## Variables de entorno
+
+El cliente solo accede a las que llevan prefijo `NEXT_PUBLIC_`:
+
+```
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+```
+
+Secretos SOLO server-side (sin `NEXT_PUBLIC_`):
+
+```
+SUPABASE_SERVICE_ROLE_KEY   # solo en Route Handlers / Server Actions / scripts, jamás en cliente
+```
+
+`.env.example` en el repo con las variables sin valores.
+
+> Nota: Supabase está migrando de `anon`/`service_role` a `publishable`/`secret`. Si el proyecto usa la nomenclatura nueva, las equivalentes son `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` y `SUPABASE_SECRET_KEY`. Mantener una sola nomenclatura por proyecto y registrarla en CLAUDE.md.
+
+## Estructura estándar de tablas
+
+```sql
+id          uuid primary key default gen_random_uuid()
+created_at  timestamp with time zone default now() not null
+updated_at  timestamp with time zone default now()
+```
+
+Soft delete (si aplica): `deleted_at timestamp with time zone default null`. Toda lectura debe filtrar `deleted_at IS NULL` (mejor en la política RLS de SELECT).
+
+### Trigger obligatorio de updated_at
+
+```sql
+create extension if not exists moddatetime schema extensions;
+
+create trigger set_updated_at
+before update on tabla
+for each row execute procedure extensions.moddatetime(updated_at);
+```
+
+### Constraints SQL — la validación real
+
+Zod valida en el cliente y el cliente se puede saltear. RLS controla **quién**, no **qué**. Toda tabla define su integridad en SQL:
+
+* `NOT NULL` en todo campo obligatorio
+* `CHECK` para rangos (`CHECK (precio >= 0)`, `CHECK (stock >= 0)`, `CHECK (cantidad > 0)`)
+* FKs con comportamiento explícito (`ON DELETE RESTRICT` o `CASCADE`)
+* `UNIQUE` donde corresponda (ej. `slug` de producto)
+
+### Dinero
+
+* Postgres: `numeric(12,2)` — nunca `float`/`real`/`double precision`.
+* Total de orden: lo calcula el SERVER desde los precios de la base, nunca el cliente.
+* Correlativos (nº de orden): `GENERATED ALWAYS AS IDENTITY` o secuencia — nunca el cliente.
+
+## Roles de usuario
+
+Tabla `user_roles` vinculada a `auth.users`:
+
+```sql
+CREATE TABLE user_roles (
+  id    uuid references auth.users(id) primary key,
+  nombre text not null,
+  rol   text not null check (rol in ('admin', 'gerente', 'cliente'))
+);
+```
+
+> En ecommerce el rol de menor privilegio suele ser `cliente` (signup abierto). El admin sube roles a mano.
+
+### RLS de user_roles — CRÍTICO
+
+Sin protección, cualquiera hace `UPDATE user_roles SET rol='admin'` con la anon key desde la consola del navegador.
+
+```sql
+ALTER TABLE user_roles ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "usuario lee solo su propio rol"
+ON user_roles FOR SELECT
+USING (auth.uid() = id);
+-- Sin políticas de INSERT/UPDATE/DELETE = nadie escribe desde el cliente. Intencional.
+```
+
+Los roles se asignan solo vía service key, Edge Function o dashboard.
+
+### Función tiene_rol() — patrón obligatorio
+
+Una política de `user_roles` que consulta `user_roles` recursa infinitamente. Crear UNA vez:
+
+```sql
+CREATE FUNCTION public.tiene_rol(rol_requerido text)
+RETURNS boolean
+LANGUAGE sql SECURITY DEFINER STABLE
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM user_roles
+    WHERE id = auth.uid() AND rol = rol_requerido
+  )
+$$;
+```
+
+### Alta de usuarios — trigger handle_new_user
+
+```sql
+CREATE FUNCTION public.handle_new_user()
+RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO public.user_roles (id, nombre, rol)
+  VALUES (new.id, coalesce(new.raw_user_meta_data->>'nombre', new.email), 'cliente');
+  RETURN new;
+END;
+$$;
+
+CREATE TRIGGER on_auth_user_created
+AFTER INSERT ON auth.users
+FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+```
+
+El rol por defecto es el de MENOR privilegio.
+
+## Políticas RLS — Patrones base
+
+`USING` controla qué filas se leen/afectan; `WITH CHECK` controla qué se escribe. Toda política de `INSERT`/`UPDATE` lleva `WITH CHECK` explícito.
+
+### Catálogo público (lectura para todos, escritura solo admin):
+```sql
+CREATE POLICY "catalogo visible para todos"
+ON productos FOR SELECT
+USING (true);   -- catálogo público; si hay borradores, filtrar por estado
+
+CREATE POLICY "solo admin modifica productos"
+ON productos FOR ALL
+USING (public.tiene_rol('admin'))
+WITH CHECK (public.tiene_rol('admin'));
+```
+
+### Datos del propio usuario (órdenes):
+```sql
+CREATE POLICY "cliente ve sus propias ordenes"
+ON ordenes FOR SELECT
+USING (auth.uid() = user_id OR public.tiene_rol('admin'));
+```
+
+## Multi-tenancy (si es multi-tienda / SaaS)
+
+* Toda tabla maestra con `org_id` (uuid).
+* RLS prohíbe acceso a filas de otra org. **`WITH CHECK` obligatorio** (sin él, se puede insertar en otra org).
+
+```sql
+USING (org_id = (SELECT org_id FROM user_roles WHERE id = auth.uid()))
+WITH CHECK (org_id = (SELECT org_id FROM user_roles WHERE id = auth.uid()))
+```
+
+## Queries — Reglas
+
+* Siempre tipadas con los tipos de la base.
+* Lecturas server encapsuladas en el DAL (`features/[dominio]/queries.ts`).
+* Mutaciones en Server Actions.
+* Interactividad cliente: hooks de React Query que llaman al browser client.
+* Manejar errores de Supabase donde se hace la query, no en el JSX.
+
+Patrón DAL (server):
+
+```ts
+// features/catalogo/queries.ts
+import { createClient } from "@/integrations/supabase/server"
+
+export async function getProductos() {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("productos")
+    .select("*")
+    .order("created_at", { ascending: false })
+  if (error) throw error
+  return data
+}
+```
+
+## Supabase Storage (imágenes de catálogo)
+
+* Buckets privados por defecto. Catálogo público puede ser bucket público.
+* Políticas sobre `storage.objects` con los mismos patrones de rol/org.
+* Validar `allowed_mime_types` y `file_size_limit` en el bucket — no confiar en el cliente.
+* Nombrar archivos con uuid o `{user_id}/{uuid}.{ext}` — nunca el nombre original.
+* Registrar el dominio del bucket en `next.config.ts` (`images.remotePatterns`) para `next/image`.
+
+## Edge Functions
+
+Solo para: operaciones con service key, webhooks externos, lógica que no debe exponerse.
+Van en `supabase/functions/[nombre]/index.ts`.
+
+> En Next, muchos webhooks se manejan mejor en un Route Handler (`app/api/.../route.ts`) que tiene acceso a las env server-side. Elegir uno por proyecto y documentarlo.
+
+## MCP de Supabase
+
+* MCP scoped al proyecto (project-ref específico), nunca token con acceso a toda la cuenta.
+* Tras CUALQUIER cambio de schema o políticas: correr `get_advisors` y corregir todas las alertas antes de terminar.
+* Revisar el SQL de una migración antes de aplicarla a datos reales.
+
+## Checklist al crear cualquier tabla nueva
+
+1. Campos estándar + trigger `updated_at`
+2. Constraints: `NOT NULL`, `CHECK`, FKs explícitas, `UNIQUE`
+3. RLS habilitado + políticas con `WITH CHECK` en escritura
+4. Multi-tenant: `org_id` + patrón completo
+5. Soft delete: filtro `deleted_at IS NULL`
+6. `get_advisors` sin alertas

@@ -1,0 +1,150 @@
+# Naming Rules — Next.js
+
+Convenciones de nombres para todo el proyecto. La IA las respeta sin excepción.
+
+## Archivos especiales de App Router (nombres fijos de Next — minúscula)
+
+Estos nombres son impuestos por Next y van SIEMPRE en minúscula:
+
+```
+page.tsx          → página de una ruta
+layout.tsx        → layout
+loading.tsx       → estado de carga
+error.tsx         → boundary de error (Client)
+not-found.tsx     → 404
+route.ts          → Route Handler (API)
+proxy.ts          → ex middleware (Next 16+)
+template.tsx      → template
+sitemap.ts / robots.ts → SEO
+```
+
+## Archivos y carpetas (el resto)
+
+| Tipo | Convención | Ejemplo |
+|------|-----------|---------|
+| Componentes React | PascalCase | `ProductoCard.tsx` |
+| Hooks | camelCase con `use` | `useCarrito.ts` |
+| Server Actions (archivo) | camelCase | `actions.ts` |
+| DAL / queries (archivo) | camelCase | `queries.ts` |
+| Schemas Zod | camelCase con sufijo `Schema` o `schema.ts` | `productoSchema` |
+| Tipos/interfaces | PascalCase | `types.ts` |
+| Utilidades | kebab-case | `format-currency.ts` |
+| Carpetas de features | kebab-case | `features/checkout/` |
+| Carpetas de ruta | kebab-case | `app/(shop)/mis-ordenes/` |
+| Route Groups | `(nombre)` entre paréntesis | `(shop)`, `(admin)` |
+| Rutas dinámicas | `[param]` | `productos/[slug]/` |
+
+## Componentes React
+
+```tsx
+export function ProductoCard({ producto }: ProductoCardProps) {}   // PascalCase
+```
+
+## Hooks (solo Client Components)
+
+```ts
+export function useCarrito() {}
+export function useProductoBySlug(slug: string) {}
+// Incorrecto: fetchProductos(), productos()
+```
+
+## Server Actions
+
+Verbos de acción, camelCase:
+
+```ts
+"use server"
+export async function crearOrden() {}
+export async function actualizarStock() {}
+```
+
+## Funciones del DAL
+
+Prefijo según operación, descriptivas:
+
+```ts
+export async function getProductos() {}
+export async function getProductoBySlug(slug: string) {}
+export async function requireRol(roles: string[]) {}
+```
+
+## Variables, funciones y constantes
+
+```ts
+const totalOrden = calcularTotal(items)            // camelCase
+const MAX_ITEMS_POR_PAGINA = 50                     // UPPER_SNAKE_CASE
+const ROLES_PERMITIDOS = ["admin", "gerente"] as const
+```
+
+## Tipos e interfaces
+
+```ts
+type Producto = { id: string; nombre: string; precio: number }
+type ProductoCardProps = { producto: Producto; onAgregar?: (id: string) => void }
+type CrearOrdenInput = { items: ItemCarrito[] }
+```
+
+## Query Keys de React Query
+
+Formato obligatorio: `["dominio", "entidad", id?]`.
+
+```ts
+["catalogo", "productos"]
+["catalogo", "producto", productoId]
+["carrito", "actual"]
+["ordenes", "lista"]
+// Incorrecto: ["getProductos"], ["productos"], ["CATALOGO_PRODUCTOS"]
+```
+
+## Tablas y columnas en Supabase
+
+snake_case; tablas en plural.
+
+```sql
+CREATE TABLE productos (...)
+CREATE TABLE ordenes (...)
+CREATE TABLE items_orden (...)
+-- columnas
+precio_unitario, slug, stock, created_at, org_id
+```
+
+## Variables de entorno
+
+* Prefijo `NEXT_PUBLIC_` SOLO para lo que puede ver el cliente.
+* Secretos sin prefijo (solo server).
+* UPPER_SNAKE_CASE.
+
+```
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+NEXT_PUBLIC_APP_NAME
+
+SUPABASE_SERVICE_ROLE_KEY        # server only
+MERCADOPAGO_ACCESS_TOKEN         # server only
+MERCADOPAGO_WEBHOOK_SECRET       # server only
+```
+
+> Regla crítica: nunca poner un secreto en una variable `NEXT_PUBLIC_*`. Todo lo `NEXT_PUBLIC_` viaja al navegador.
+
+## Eventos y handlers
+
+`on` para props de evento, `handle` para la implementación:
+
+```tsx
+type Props = { onAgregar: (p: Producto) => void; onCancelar: () => void }
+function handleAgregar(p: Producto) { mutation.mutate(p) }
+<ProductoForm onAgregar={handleAgregar} />
+```
+
+## Rutas (URLs)
+
+kebab-case; plural para colecciones, singular/slug para detalle.
+
+```
+/productos                → lista
+/productos/[slug]         → detalle
+/carrito                  → carrito
+/checkout                 → checkout
+/mis-ordenes              → órdenes del usuario
+/admin/productos          → gestión (protegido)
+```

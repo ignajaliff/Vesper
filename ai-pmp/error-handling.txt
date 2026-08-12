@@ -1,0 +1,149 @@
+# Error Handling Rules — Next.js App Router
+
+El manejo de errores debe ser consistente. La IA no inventa su propio patrón.
+
+## Principio general
+
+* Errores al usuario: claros y no técnicos.
+* Logs solo en server o en desarrollo. Nunca exponer mensajes internos de Supabase / Mercado Pago / stack traces al usuario final.
+* En ecommerce, los errores de pago y stock son críticos: ver `payments-rules.txt` y `ecommerce-rules.txt`.
+
+## Archivos especiales de App Router
+
+Next provee convenciones por carpeta. Usarlas en lugar de inventar wrappers:
+
+| Archivo | Para qué |
+|---------|----------|
+| `loading.tsx` | Estado de carga (Suspense automático) de esa ruta |
+| `error.tsx` | Captura errores de render de esa ruta (es Client Component, recibe `reset`) |
+| `not-found.tsx` | 404 de la ruta (se dispara con `notFound()`) |
+| `global-error.tsx` | Errores del layout raíz |
+
+```tsx
+// app/(shop)/productos/error.tsx
+"use client"
+export default function Error({ reset }: { error: Error; reset: () => void }) {
+  return (
+    <div className="text-destructive text-sm">
+      No se pudieron cargar los productos.
+      <button onClick={reset} className="underline ml-2">Reintentar</button>
+    </div>
+  )
+}
+```
+
+```tsx
+// app/(shop)/productos/loading.tsx
+import { Skeleton } from "@/components/ui/skeleton"
+export default function Loading() {
+  return <Skeleton className="h-48 w-full" />
+}
+```
+
+## Errores en Server Components / DAL
+
+Si una lectura falla, lanzar el error: lo captura el `error.tsx` de la ruta. Para "no encontrado", usar `notFound()` (dispara `not-found.tsx`), no lanzar genérico.
+
+```tsx
+const producto = await getProductoBySlug(slug)
+if (!producto) notFound()
+```
+
+## Errores en Server Actions
+
+Las Server Actions NO deben lanzar al cliente datos sensibles. Devolver un resultado tipado:
+
+```ts
+"use server"
+type ActionResult = { ok: true } | { ok: false; error: string }
+
+export async function crearOrden(input: unknown): Promise<ActionResult> {
+  const parsed = ordenSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: "Datos inválidos" }
+  const { error } = await supabase.from("ordenes").insert(/* ... */)
+  if (error) {
+    if (process.env.NODE_ENV === "development") console.error(error)
+    return { ok: false, error: "No se pudo crear la orden. Intentá de nuevo." }
+  }
+  revalidatePath("/ordenes")
+  return { ok: true }
+}
+```
+
+El Client Component que llama al action muestra el error con `toast` destructive si `ok === false`.
+
+## Errores en mutations de React Query (cliente)
+
+Usar `toast` de shadcn/ui:
+
+```ts
+const mutation = useMutation({
+  mutationFn: async (data) => {
+    const res = await crearOrden(data)        // Server Action
+    if (!res.ok) throw new Error(res.error)
+    return res
+  },
+  onSuccess: () => {
+    toast({ title: "Guardado correctamente" })
+    queryClient.invalidateQueries({ queryKey: ["ordenes", "lista"] })
+  },
+  onError: (error) => {
+    toast({
+      title: "Error al guardar",
+      description: "Intentá de nuevo o contactá al administrador.",
+      variant: "destructive",
+    })
+    if (process.env.NODE_ENV === "development") console.error(error)
+  },
+})
+```
+
+> El `if (process.env.NODE_ENV === "development")` es obligatorio: un `console.error` suelto corre también en producción.
+
+## Errores en queries de React Query (cliente)
+
+Usar `isError` para un estado de error en la UI. No `throw` en el render.
+
+```tsx
+if (isError) {
+  return <div className="text-destructive text-sm">No se pudieron cargar los datos. Reintentá.</div>
+}
+```
+
+## Errores de formulario
+
+Errores de validación Zod inline con `FormMessage` de shadcn/ui. Nunca con toast (inline es más claro).
+
+```tsx
+<FormField name="email" render={({ field }) => (
+  <FormItem>
+    <FormLabel>Email</FormLabel>
+    <FormControl><Input {...field} /></FormControl>
+    <FormMessage />
+  </FormItem>
+)} />
+```
+
+## Estados de carga
+
+Toda sección que cargue datos tiene loading visible:
+* Rutas → `loading.tsx` + Suspense.
+* Islas Client con React Query → `Skeleton` de shadcn (en tablas, una por fila esperada).
+
+## Errores de autenticación
+
+* No autenticado en ruta protegida → `redirect("/auth/login")` desde el layout/DAL server.
+* Sesión expirada → el `proxy.ts` refresca; si falla, redirect a login con mensaje "Tu sesión expiró".
+* Sin el rol requerido → `notFound()` o `redirect("/")` desde el layout server (no mostrar la UI admin).
+
+## Errores de pago (ver payments-rules.txt)
+
+* El usuario vuelve de Mercado Pago a `/checkout/exito|error|pendiente` (URLs de `back_urls`).
+* NUNCA marcar la orden como pagada por la `back_url`: el estado real lo confirma el webhook validado.
+* Si el webhook llega con pago rechazado/cancelado: marcar orden como tal y NO descontar stock.
+
+## Regla de oro
+
+> Si un error puede ocurrir, debe manejarse. Si no puede ocurrir, no agregar manejo preventivo.
+
+Validar solo en los bordes: formularios, respuestas de Supabase, webhooks y respuestas de Mercado Pago.

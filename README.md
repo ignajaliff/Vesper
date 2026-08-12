@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Vesper — E-commerce de perfumería
 
-## Getting Started
+Tienda online de perfumes de autor. Next.js 16 (App Router) + React 19 + TypeScript strict, Tailwind v4 y shadcn/ui, con Supabase y Mercado Pago previstos.
 
-First, run the development server:
+## Requisitos
+
+* Node.js 20+ (probado en v22)
+
+## Puesta en marcha
 
 ```bash
+npm install
+cp .env.example .env.local   # completar cuando exista el proyecto de Supabase
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+La app queda en http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Comandos
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Comando | Qué hace |
+|---------|----------|
+| `npm run dev` | Servidor de desarrollo (Turbopack) |
+| `npm run build` | Build de producción |
+| `npm run start` | Sirve el build |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint` | ESLint |
 
-## Learn More
+## Estructura
 
-To learn more about Next.js, take a look at the following resources:
+```
+src/
+  app/                  App Router: rutas, layouts, sitemap, robots
+    (shop)/             grupo público (header + footer)
+  features/             módulos de negocio por dominio
+    carrito/            estado de cliente (Zustand + localStorage)
+    catalogo/           DAL, tipos y schemas del catálogo
+    checkout/           Server Actions, tipos y schemas de la orden
+    home/               componentes de la home (Hero)
+  shared/               UI reutilizable
+    components/ui/      componentes shadcn (dumb)
+    components/layout/  header, footer, nav
+  lib/                  configuración base (queryClient, formato, site)
+  data/                 Data Access Layer transversal (auth)
+  integrations/         clientes externos (Supabase)
+  proxy.ts              ex middleware: refresco de sesión / redirects de UX
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Reglas de desarrollo
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Todo el desarrollo sigue los documentos de [`ai-pmp/`](ai-pmp/). Leerlos antes de tocar código.
+El contexto y estado del proyecto vive en [`CLAUDE.md`](CLAUDE.md).
 
-## Deploy on Vercel
+Puntos no negociables:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+* **Server-first**: Server Components por defecto; `"use client"` lo más abajo posible.
+* **Lecturas** por el DAL en Server Components; **mutaciones** por Server Actions; React Query solo para interactividad de cliente.
+* La autorización real vive en el **RLS de Supabase + el DAL** (`getUser()`), nunca en `proxy.ts`.
+* El **total de la orden y el stock se calculan en el server**; el precio del carrito es referencial.
+* Sin colores hardcodeados: solo tokens semánticos de shadcn.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Estado
+
+Base del proyecto lista. Supabase y Mercado Pago todavía **no** están conectados: las funciones del DAL son stubs marcados con `TODO(supabase)`.

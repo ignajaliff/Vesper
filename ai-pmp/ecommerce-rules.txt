@@ -1,0 +1,125 @@
+# E-commerce Rules — Next.js + Supabase
+
+Reglas específicas de tiendas. Complementan `rules.txt`, `frontend-rules.txt` y `payments-rules.txt`.
+
+## Modelo de datos base (mínimo)
+
+```
+productos       → id, slug (unique), nombre, descripcion, precio (numeric(12,2)),
+                  stock (int, check >= 0), activo (bool), imagen_url, created_at, updated_at
+categorias      → id, slug, nombre
+producto_categoria → producto_id, categoria_id (tabla puente)
+ordenes         → id, numero_orden (GENERATED ALWAYS AS IDENTITY), user_id,
+                  estado (check in pendiente/pagada/enviada/cancelada),
+                  total (numeric(12,2)), metodo_pago, pago_id, created_at, updated_at
+items_orden     → id, orden_id (FK), producto_id (FK), cantidad (check > 0),
+                  precio_unitario (numeric(12,2))   ← precio CONGELADO al momento de la compra
+```
+
+> `precio_unitario` en `items_orden` se guarda al confirmar la orden y NO cambia aunque el precio del producto cambie después. La orden es un registro histórico.
+
+## Catálogo — rendimiento y SEO (lo que más importa)
+
+* Listado y detalle de producto = Server Components con datos del DAL.
+* Pre-renderizar el detalle con `generateStaticParams` + ISR:
+
+```ts
+// app/(shop)/productos/[slug]/page.tsx
+export const revalidate = 3600   // regenera la página cada hora (ISR)
+
+export async function generateStaticParams() {
+  const productos = await getSlugsActivos()
+  return productos.map((p) => ({ slug: p.slug }))
+}
+
+export async function generateMetadata({ params }): Promise<Metadata> {
+  const { slug } = await params
+  const p = await getProductoBySlug(slug)
+  if (!p) return {}
+  return {
+    title: p.nombre,
+    description: p.descripcion,
+    openGraph: { images: [p.imagen_url] },
+  }
+}
+```
+
+* Tras editar/crear un producto en admin, revalidar: `revalidatePath("/productos")` y la ruta del detalle, o `revalidateTag`.
+* `app/sitemap.ts` lista los productos activos; `app/robots.ts` permite indexar el catálogo.
+* Datos estructurados (JSON-LD `Product`) en el detalle para SEO de ecommerce.
+
+## Imágenes de producto
+
+* SIEMPRE `next/image` con `sizes` correctos.
+* `priority` solo en la imagen principal del detalle (LCP).
+* Bucket de Supabase Storage registrado en `next.config.ts` (`images.remotePatterns`).
+
+## Carrito
+
+* Estado de CLIENTE (Zustand o React Query con persistencia).
+* Persistencia: `localStorage` para invitado; opcionalmente en la base (`carritos`) si el usuario está logueado, para sincronizar entre dispositivos.
+* El carrito guarda `producto_id` y `cantidad`. El precio que muestra es REFERENCIAL.
+* **Regla crítica**: el precio y el total mostrados en el carrito son solo UX. El total que se cobra se RECALCULA en el server al hacer checkout, leyendo el precio actual de la base. Nunca confiar en el precio/total que manda el cliente.
+
+## Checkout y stock — el flujo correcto
+
+El checkout es una operación server (Server Action o Route Handler), nunca lógica de cliente:
+
+1. Recibir del cliente solo `{ producto_id, cantidad }[]` (sin precios).
+2. En el server: leer precios y stock actuales de la base.
+3. Validar stock disponible para cada ítem. Si falta, abortar con error claro.
+4. Calcular el total en el server (`numeric`, redondeo central).
+5. Crear la orden en estado `pendiente` con `total` y los `items_orden` (con `precio_unitario` congelado).
+6. Crear la preferencia de pago de Mercado Pago con ese total (ver `payments-rules.txt`).
+7. Redirigir al `init_point` de Mercado Pago.
+
+> **El stock NO se descuenta al crear la orden pendiente.** Se descuenta cuando el webhook confirma el pago aprobado. Así una orden abandonada no consume stock.
+
+### Descuento de stock seguro (evitar sobreventa)
+
+El descuento de stock debe ser atómico y validar disponibilidad en la misma operación. Hacerlo en una función de Postgres (`SECURITY DEFINER`) o con un `UPDATE ... WHERE stock >= cantidad` que falle si no hay stock — nunca con un read-then-write desde el cliente (dos compras simultáneas = sobreventa).
+
+```sql
+-- ejemplo de update atómico
+UPDATE productos SET stock = stock - $cantidad
+WHERE id = $producto_id AND stock >= $cantidad;
+-- si afecta 0 filas → no había stock → revertir la orden
+```
+
+## Estados de orden
+
+```
+pendiente  → orden creada, esperando pago
+pagada     → webhook confirmó pago aprobado (acá se descuenta stock)
+enviada    → despachada (acción de admin)
+cancelada  → pago rechazado/cancelado o cancelada por admin (stock no se tocó o se repone)
+```
+
+Las transiciones de estado las hace el SERVER (webhook o admin), nunca el cliente.
+
+## Páginas de retorno (back_urls de Mercado Pago)
+
+```
+/checkout/exito      → muestra "gracias", pero NO confía en esta URL para marcar pagada
+/checkout/error      → pago rechazado
+/checkout/pendiente  → pago en revisión
+```
+
+> El estado real de la orden lo define el webhook validado, no la URL de retorno (el usuario puede cerrar la pestaña antes de volver, o manipular la URL).
+
+## RLS de ecommerce
+
+* `productos`, `categorias`: SELECT público (`USING (activo = true)` para ocultar borradores); escritura solo admin.
+* `ordenes`, `items_orden`: el cliente ve solo las suyas (`auth.uid() = user_id`); admin ve todas; la escritura de estado va por service key / Server Action, no desde el cliente.
+
+## Checklist al armar el ecommerce
+
+- [ ] Total recalculado 100% en el server desde la base
+- [ ] `precio_unitario` congelado en `items_orden`
+- [ ] Stock descontado solo tras pago confirmado, de forma atómica
+- [ ] `numero_orden` generado por la base
+- [ ] Detalle de producto con ISR + `generateMetadata` + JSON-LD
+- [ ] `sitemap.ts` y `robots.ts`
+- [ ] `next/image` en todo el catálogo con `sizes`
+- [ ] Webhook de Mercado Pago validado (firma) y re-consultando el pago (ver payments-rules.txt)
+- [ ] back_urls no usadas como fuente de verdad del pago

@@ -1,0 +1,166 @@
+# Frontend Rules — Next.js App Router
+
+Framework: Next.js 16+ con App Router y React 19 (Server Components por defecto).
+
+## Server Components vs Client Components
+
+Esta distinción gobierna todo el frontend.
+
+**Server Component (por defecto, sin directiva):**
+* Lee datos directo de Supabase (server client / DAL)
+* No envía JS al cliente, no hidrata
+* No usa `useState`, `useEffect`, ni event handlers
+* Ideal para: páginas, listados, detalle de producto, layouts, contenido estático
+
+**Client Component (`"use client"` en la primera línea):**
+* Tiene interactividad: estado, efectos, eventos, React Query
+* Ideal para: carrito, formularios, filtros en vivo, botones de acción, modales
+
+**Regla de oro**: empujar `"use client"` lo más abajo posible. Una página Server puede renderizar islas Client (ej. `<AgregarAlCarrito />`) pasándoles datos por props. No marcar toda la página como Client por un solo botón.
+
+```tsx
+// app/(shop)/productos/[slug]/page.tsx  → Server Component
+export default async function ProductoPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params        // params es async en Next 16
+  const producto = await getProductoBySlug(slug)  // DAL, corre en server
+  return (
+    <section>
+      <ProductoDetalle producto={producto} />        {/* Server, UI pura */}
+      <AgregarAlCarritoButton producto={producto} /> {/* Client, isla interactiva */}
+    </section>
+  )
+}
+```
+
+> En Next 16, `params` y `searchParams` son Promises: hay que `await`-earlos.
+
+## Componentes
+
+Separar estrictamente:
+
+* **Dumb Components** (UI pura, sin lógica ni datos) → `shared/components/ui/`
+* **Smart Client Components** (React Query, estado de dominio) → `features/[dominio]/components/`
+* **Layout Components** → `shared/components/layout/`
+
+## Data fetching
+
+* **Lecturas iniciales** → en el Server Component, llamando al DAL (`features/[dominio]/queries.ts`). No usar React Query para esto.
+* **Mutaciones** → Server Actions (`features/[dominio]/actions.ts`, archivo con `"use server"`).
+* **Interactividad cliente** (carrito, optimistic, refetch en vivo) → React Query en Client Components.
+
+```ts
+// features/checkout/actions.ts
+"use server"
+export async function crearOrden(input: CrearOrdenInput) {
+  // valida con Zod, recalcula el total desde la base, inserta, revalida
+}
+```
+
+Tras una mutación que cambia datos mostrados por Server Components, usar `revalidatePath()` o `revalidateTag()` (no recargar a mano).
+
+## Formularios
+
+Usar siempre **React Hook Form + Zod** en Client Components.
+
+```ts
+const schema = z.object({
+  nombre: z.string().min(1, "Requerido"),
+  email: z.email("Email inválido"),
+})
+const form = useForm<z.infer<typeof schema>>({ resolver: zodResolver(schema) })
+```
+
+* Los esquemas Zod van en `features/[dominio]/schema.ts` y se reusan en el Server Action (validar de nuevo en el server: el cliente puede saltearse).
+* El submit puede llamar a un Server Action o a una mutación de React Query, según el caso.
+
+> **Regla estricta**: validar con Zod en cliente (UX) Y en el server (seguridad). Nunca confiar solo en la validación del cliente.
+
+## Estado
+
+* **Datos del servidor (lectura)**: Server Components.
+* **Datos del servidor (interactivo)**: React Query.
+* **Carrito**: estado de cliente (Zustand o React Query). Persistir en `localStorage` o en la base si el usuario está logueado. El precio del carrito es referencial — el total real se recalcula en el server al hacer checkout.
+* **Estado global de UI** (sidebar, tema): Zustand solo si hace falta.
+* **Estado local efímero** (modales, toggles): `useState`.
+
+Nunca usar `useState` para datos que ya resuelve un Server Component.
+
+## UI library
+
+Usar siempre **shadcn/ui**. Evitar otras librerías de UI salvo justificación.
+
+Instalar componentes: `npx shadcn@latest add [componente]`.
+
+## Imágenes (clave en ecommerce)
+
+* SIEMPRE `next/image`, nunca `<img>` suelto.
+* Definir `sizes` correctos para responsive y evitar layout shift.
+* Imágenes de catálogo de Supabase Storage: registrar el dominio en `next.config.ts` (`images.remotePatterns`).
+* Formatos modernos (Next sirve webp/avif solo). `priority` solo en la imagen LCP (hero / primer producto).
+
+## Diseño (Fase de Estructura / Wireframing)
+
+* UI funcional, limpia y técnica; componentes densos y reutilizables.
+* **Neutralidad estricta**: usar solo la paleta por defecto de shadcn (grises `slate`/`zinc`) o tokens semánticos.
+* **Prohibido color hardcoded** (`bg-[#DD624A]`).
+
+Tokens permitidos: `bg-primary`, `bg-secondary`, `bg-muted`, `bg-accent`, `bg-destructive`, `text-primary`, `text-muted-foreground`, `text-destructive`, `border`, `border-input`, `ring`.
+
+> Propósito: aislar lógica de estética. La estética se inyecta después editando variables CSS en `globals.css` según el `design-system.md` del cliente.
+
+## Rutas y navegación (App Router)
+
+Rutas definidas por carpetas en `app/`. Convenciones:
+
+```
+app/
+  layout.tsx                    → layout raíz (obligatorio, con <html> y <body>)
+  page.tsx                      → home /
+  (shop)/                       → grupo público (no afecta la URL)
+    productos/page.tsx          → /productos
+    productos/[slug]/page.tsx   → /productos/:slug
+    carrito/page.tsx            → /carrito
+    checkout/page.tsx           → /checkout
+  (admin)/
+    layout.tsx                  → layout con chequeo de rol
+    admin/page.tsx              → /admin
+  api/
+    webhooks/mercadopago/route.ts → POST webhook
+```
+
+Navegación con `<Link>` de `next/link` y `useRouter` de `next/navigation` (no `next/router`).
+
+## SEO y metadata (no negociable en ecommerce)
+
+* Metadata estática: `export const metadata` en el layout/page.
+* Metadata dinámica (producto): `export async function generateMetadata()`.
+* Catálogo y detalle de producto: pre-renderizar con `generateStaticParams` + ISR (`export const revalidate = N`) para que sean indexables y rápidos.
+* `app/sitemap.ts` y `app/robots.ts` para sitemap y robots.
+
+## Seguridad Perimetral (RBAC)
+
+* La autorización REAL vive en el DAL (`getUser()` + chequeo de rol) y en el RLS de Supabase.
+* El `proxy.ts` (ex middleware) solo redirige no-autenticados por UX — NO es la barrera de seguridad (CVE-2025-29927).
+* Layouts de grupo protegido (`(admin)/layout.tsx`) chequean rol en el server y redirigen si no corresponde:
+
+```tsx
+// app/(admin)/layout.tsx  → Server Component
+export default async function AdminLayout({ children }) {
+  const user = await requireRol(["admin", "gerente"]) // DAL: getUser + chequeo, redirect si falla
+  return <AdminShell>{children}</AdminShell>
+}
+```
+
+## Performance
+
+* Aprovechar Server Components: menos JS al cliente por defecto.
+* `loading.tsx` por ruta para streaming + Suspense.
+* Code splitting: `next/dynamic` para Client Components pesados (ej. mapa, editor).
+* `useMemo`/`useCallback` solo ante un problema medible, no preventivo.
+
+## Accesibilidad básica
+
+* Todo input con `label` asociado.
+* Botones de icono con `aria-label`.
+* Elementos semánticos (`button`, `nav`, `main`, `section`), no `div` para todo.
+* Errores de formulario visibles y descriptivos (`FormMessage` de shadcn).

@@ -1,0 +1,173 @@
+# Payments Rules — Mercado Pago (Checkout Pro)
+
+Integración de pagos con Mercado Pago en Next.js. La seguridad del pago es NO negociable: un error acá significa órdenes marcadas como pagadas sin cobrar, o sobreventa.
+
+## SDK y credenciales
+
+* Paquete: `mercadopago` (SDK oficial de Node).
+* Credenciales SOLO server-side (sin `NEXT_PUBLIC_`):
+
+```
+MERCADOPAGO_ACCESS_TOKEN      # access token de la aplicación (server)
+MERCADOPAGO_WEBHOOK_SECRET    # secreto de firma del webhook (Tus integraciones > Webhooks)
+```
+
+> El access token NUNCA va al cliente ni a una variable `NEXT_PUBLIC_*`. Todo el contacto con Mercado Pago ocurre en Server Actions o Route Handlers.
+
+## Flujo Checkout Pro
+
+1. El cliente confirma el checkout (manda solo `producto_id` + `cantidad`).
+2. Server: crea la orden `pendiente` y calcula el total desde la base (ver `ecommerce-rules.txt`).
+3. Server: crea una **preferencia** de pago con los ítems y el total real.
+4. Server: devuelve el `init_point` (URL de pago).
+5. El cliente redirige a `init_point`.
+6. Mercado Pago procesa el pago y:
+   * redirige al usuario a una `back_url` (solo UX),
+   * envía un **webhook** al endpoint (fuente de verdad del estado).
+
+## Crear la preferencia (server)
+
+```ts
+// features/checkout/actions.ts
+"use server"
+import { MercadoPagoConfig, Preference } from "mercadopago"
+
+const client = new MercadoPagoConfig({ accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN! })
+
+export async function crearPreferencia(ordenId: string, items: ItemServer[]) {
+  const preference = new Preference(client)
+  const result = await preference.create({
+    body: {
+      items: items.map((i) => ({
+        id: i.producto_id,
+        title: i.nombre,
+        quantity: i.cantidad,
+        unit_price: i.precio_unitario,   // calculado en el server, nunca del cliente
+        currency_id: "ARS",
+      })),
+      external_reference: ordenId,        // vincula el pago con la orden
+      back_urls: {
+        success: `${process.env.NEXT_PUBLIC_APP_URL}/checkout/exito`,
+        failure: `${process.env.NEXT_PUBLIC_APP_URL}/checkout/error`,
+        pending: `${process.env.NEXT_PUBLIC_APP_URL}/checkout/pendiente`,
+      },
+      auto_return: "approved",
+      notification_url: `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/mercadopago`,
+    },
+  })
+  return result.init_point
+}
+```
+
+* `external_reference` = id de la orden. Es como después se cruza el webhook con la orden.
+* `unit_price` SIEMPRE del server.
+
+## Webhook — el punto más crítico
+
+El webhook es un Route Handler (`app/api/webhooks/mercadopago/route.ts`). Reglas absolutas:
+
+1. **Validar la firma `x-signature`** antes de procesar nada. Si no valida, responder 401 y cortar.
+2. **Nunca confiar en el body** para el estado/monto. Re-consultar el pago a la API de Mercado Pago con el `payment_id` para obtener el estado real.
+3. Responder rápido (200) una vez procesado; Mercado Pago reintenta si no.
+4. Ser **idempotente**: el mismo pago puede notificarse varias veces. No descontar stock ni marcar pagada dos veces (chequear el estado actual de la orden antes de actuar).
+
+### Validación de la firma (x-signature)
+
+Mercado Pago manda el header `x-signature` con formato `ts=...,v1=...` y un `x-request-id`. Se valida con HMAC-SHA256 usando el `MERCADOPAGO_WEBHOOK_SECRET`:
+
+```ts
+// app/api/webhooks/mercadopago/route.ts
+import crypto from "node:crypto"
+import { NextResponse, type NextRequest } from "next/server"
+
+function validarFirma(req: NextRequest, dataId: string): boolean {
+  const xSignature = req.headers.get("x-signature")
+  const xRequestId = req.headers.get("x-request-id")
+  if (!xSignature || !xRequestId) return false
+
+  const parts = Object.fromEntries(
+    xSignature.split(",").map((p) => p.split("=").map((s) => s.trim()) as [string, string])
+  )
+  const ts = parts["ts"]
+  const v1 = parts["v1"]
+  if (!ts || !v1) return false
+
+  // plantilla EXACTA exigida por Mercado Pago (ojo con el ; final)
+  const manifest = `id:${dataId};request-id:${xRequestId};ts:${ts};`
+  const hmac = crypto
+    .createHmac("sha256", process.env.MERCADOPAGO_WEBHOOK_SECRET!)
+    .update(manifest)
+    .digest("hex")
+
+  return crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(v1))
+}
+
+export async function POST(req: NextRequest) {
+  const body = await req.json()
+  // el id del recurso (pago) viene en query (?data.id=) o en body.data.id según el evento
+  const url = new URL(req.url)
+  const dataId = url.searchParams.get("data.id") ?? body?.data?.id
+  if (!dataId) return NextResponse.json({ ok: false }, { status: 400 })
+
+  if (!validarFirma(req, String(dataId))) {
+    return NextResponse.json({ ok: false }, { status: 401 })
+  }
+
+  // NO confiar en el body: re-consultar el pago real a la API
+  const pago = await getPagoDeMercadoPago(String(dataId)) // usa el SDK Payment.get
+  const ordenId = pago.external_reference
+  const estado = pago.status   // "approved" | "rejected" | "pending" | ...
+
+  // idempotente + transición de estado en el server (service key)
+  await procesarEstadoOrden(ordenId, estado, String(dataId))
+
+  return NextResponse.json({ ok: true })
+}
+```
+
+> Detalles que rompen en producción si se ignoran:
+> - La plantilla del manifest debe ser EXACTA, incluido el `;` final tras `ts`.
+> - Comparar con `timingSafeEqual`, no con `==`.
+> - El `data.id` puede venir en query string o en el body según el tipo de notificación.
+
+### Re-consultar el pago
+
+```ts
+import { MercadoPagoConfig, Payment } from "mercadopago"
+const client = new MercadoPagoConfig({ accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN! })
+
+export async function getPagoDeMercadoPago(paymentId: string) {
+  const payment = new Payment(client)
+  return payment.get({ id: paymentId })
+}
+```
+
+## Transición de estado (idempotente, server)
+
+`procesarEstadoOrden` corre con la **service key** de Supabase (no la anon), porque cambia estado y stock que el cliente no puede tocar:
+
+* Si la orden ya está `pagada` y llega `approved` de nuevo → no hacer nada (idempotencia).
+* `approved` → marcar `pagada`, descontar stock atómicamente (ver `ecommerce-rules.txt`), guardar `pago_id`.
+* `rejected` / `cancelled` → marcar `cancelada`, NO descontar stock.
+* `pending` / `in_process` → dejar `pendiente`.
+
+## Páginas de retorno (back_urls)
+
+`/checkout/exito|error|pendiente` son solo UX. **Nunca** marcar la orden como pagada desde la `back_url`: el usuario puede no volver, o manipular la URL. La verdad es el webhook validado.
+
+## Pruebas
+
+* Usar credenciales de TEST y usuarios de prueba de Mercado Pago.
+* Para probar el webhook en local, exponer la URL con un túnel (ej. el dev tunnel del entorno) — Mercado Pago necesita una URL HTTPS pública.
+* Validar que la firma se verifica también en producción (es el error más común: funciona en test y falla en prod por usar el secret equivocado).
+
+## Checklist de pagos
+
+- [ ] Access token y webhook secret SOLO server-side
+- [ ] Preferencia creada en el server con `unit_price` de la base
+- [ ] `external_reference` = id de la orden
+- [ ] Webhook valida `x-signature` con HMAC-SHA256 y `timingSafeEqual`
+- [ ] Webhook re-consulta el pago a la API (no confía en el body)
+- [ ] Procesamiento idempotente del estado
+- [ ] Stock se descuenta solo en `approved`, de forma atómica
+- [ ] back_urls no usadas como fuente de verdad

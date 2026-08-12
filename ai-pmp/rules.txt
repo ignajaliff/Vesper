@@ -1,0 +1,171 @@
+# AI Development Rules — Next.js (E-commerce)
+
+## Stack obligatorio
+
+Todos los proyectos Next deben usar el siguiente stack:
+
+* Next.js 16+ (App Router — NUNCA Pages Router en proyectos nuevos)
+* React 19 (Server Components por defecto)
+* TypeScript con `strict: true`
+* Turbopack (es el bundler por defecto en Next 16 — no configurar webpack salvo necesidad real)
+* Tailwind CSS v4 (vía `@tailwindcss/postcss`) + shadcn/ui
+* Supabase como backend, vía `@supabase/ssr` (NUNCA `@supabase/auth-helpers-nextjs`, está deprecado)
+* TanStack React Query SOLO para estado de cliente (carrito, mutaciones interactivas, optimistic updates)
+* React Hook Form + Zod para formularios
+* Zustand solo si se necesita estado global complejo de UI
+* Mercado Pago para pagos (ver `payments-rules.txt`)
+
+> Node.js mínimo: v18.17. Recomendado v20+.
+
+## Paradigma central: Server-first
+
+Este es el cambio mental más importante respecto a un SPA con Vite:
+
+* **Todo componente en `app/` es Server Component por defecto.** No lleva `"use client"`.
+* Server Components: leen datos directo de Supabase (server client), no envían JS al cliente, no usan hooks de React.
+* Client Components (`"use client"` arriba de todo): SOLO cuando hay interactividad real (estado, efectos, eventos, React Query, carrito).
+* **Regla**: empujar el `"use client"` lo más abajo posible en el árbol. Una página es Server; las islas interactivas son Client.
+
+### Quién hace qué (data fetching)
+
+| Necesidad | Herramienta |
+|-----------|-------------|
+| Lectura inicial de datos (catálogo, detalle de producto, listados) | Server Component → Supabase server client |
+| Mutaciones server (crear orden, checkout, alta admin) | Server Action |
+| Estado de cliente interactivo (carrito, filtros en vivo, optimistic) | React Query (client) |
+| Webhooks / lógica con service key | Route Handler (`app/api/.../route.ts`) |
+
+> No traer React Query para lecturas que un Server Component resuelve mejor. React Query NO es el default acá: es la excepción para interactividad.
+
+## Arquitectura general
+
+Separar siempre:
+
+* Frontend (UI, Server/Client Components, páginas)
+* Backend (Supabase schema, RLS policies, Server Actions, Route Handlers)
+* Data layer (DAL: funciones de acceso a datos tipadas y centralizadas)
+
+Nunca mezclar lógica de UI con lógica de datos.
+
+## Estructura del proyecto
+
+```
+src/
+  app/                ← App Router: rutas, layouts, páginas, route handlers
+    (shop)/           ← grupo de rutas públicas del ecommerce
+    (admin)/          ← grupo de rutas protegidas
+    api/              ← Route Handlers (webhooks, etc.)
+  features/           ← módulos de negocio (organizar por dominio)
+  shared/             ← componentes, hooks y utilidades reutilizables
+  lib/                ← configuraciones base (queryClient, zod, utils)
+  data/               ← Data Access Layer (funciones de acceso a datos)
+  integrations/       ← clientes externos (Supabase, Mercado Pago)
+```
+
+Organizar siempre por **features (dominio)**, no por tipo de archivo.
+
+Cada feature contiene:
+
+```
+features/[dominio]/
+  components/   ← Client Components del dominio (los Server van en app/ o se componen ahí)
+  actions.ts    ← Server Actions del dominio ("use server")
+  queries.ts    ← funciones del DAL (lecturas server, tipadas)
+  hooks/        ← hooks de React Query (solo cliente)
+  types.ts      ← tipos TypeScript del dominio
+  schema.ts     ← esquemas Zod del dominio
+```
+
+## Data Access Layer (DAL) — patrón clave en Next
+
+Toda lectura de datos sensible pasa por funciones del DAL en `src/data/` o `features/[dominio]/queries.ts`. La función del DAL:
+
+1. Crea el server client de Supabase
+2. Verifica el usuario con `supabase.auth.getUser()` (NUNCA `getSession()` para decisiones de auth)
+3. Hace la query (el RLS la respalda igual)
+4. Devuelve datos tipados
+
+> Por qué: tras la CVE-2025-29927, confiar la autorización solo al `proxy.ts` (ex middleware) es inseguro. La autorización real vive cerca de los datos: RLS en Supabase + chequeo en el DAL. El `proxy.ts` es solo para redirects de UX, no es seguridad.
+
+## Reglas de código
+
+* Máximo 300 líneas por archivo. Si se supera, dividir en subcomponentes o funciones.
+* Código modular y reutilizable (DRY).
+* Tipar todo con TypeScript — prohibido `any`.
+* Importar tipos con la palabra `type`: `import { type User } from "@supabase/supabase-js"`.
+* `"use client"` y `"use server"` van SIEMPRE en la primera línea del archivo.
+* No poner secretos en componentes Client ni en variables `NEXT_PUBLIC_*` (ver naming-rules).
+* Antes de cualquier cambio, verificar que no rompe imports ni genera errores.
+
+## UI
+
+Todos los componentes UI usan **shadcn/ui**.
+
+* Prohibido color hardcoded (`bg-[#DD624A]`). Usar tokens semánticos (`bg-primary`, `text-destructive`, `bg-muted`...).
+* Componentes dumb en `shared/components/ui/`.
+* Componentes con lógica de dominio en `features/[dominio]/components/`.
+* Imágenes SIEMPRE con `next/image` (optimización, lazy y `sizes` correctos).
+
+## React Query (solo cliente)
+
+Configuración base del QueryClient (en un provider Client en el layout):
+
+```ts
+{
+  staleTime: 5 * 60 * 1000,   // 5 minutos
+  gcTime: 10 * 60 * 1000,     // 10 minutos
+  retry: 1,
+}
+```
+
+Query Keys — formato obligatorio: `["dominio", "entidad", id?]`.
+
+## Supabase
+
+* Todas las tablas con RLS habilitado (ver `supabase-rules.txt`).
+* Tres clientes según contexto: browser, server, proxy. Nunca otra instancia suelta.
+* Queries tipadas con los tipos generados de Supabase.
+* Nunca exponer la service/secret key en el cliente.
+
+## Desarrollo de features
+
+Cada feature nueva, en este orden:
+
+1. Tabla en Supabase con campos estándar + constraints + trigger `updated_at`
+2. Políticas RLS (con `WITH CHECK` en escritura)
+3. Tipos TypeScript
+4. Esquema Zod
+5. DAL (lecturas server) y/o Server Actions (mutaciones)
+6. Hooks React Query solo si hay interactividad cliente
+7. Componentes y página
+
+## Seguridad
+
+* RLS siempre. La muralla real es el RLS, no el frontend ni el `proxy.ts`.
+* Autorización en el DAL con `getUser()`, no en el proxy.
+* Validar formularios con Zod antes de la red — pero la validación REAL son los constraints SQL.
+* Rutas sensibles: chequeo de rol en el DAL/Server Action + RLS. El `proxy.ts` solo redirige por UX.
+* Nunca leer, imprimir ni commitear `.env` ni archivos con credenciales.
+* `user_roles` protegida según `supabase-rules.txt`: nadie cambia su propio rol desde el cliente.
+
+## Dinero y cálculos
+
+* En la base: campos monetarios siempre `numeric(12,2)` — nunca float.
+* El total de una orden se calcula SIEMPRE en el server (Server Action / Route Handler) a partir de los precios de la base. NUNCA confiar en el precio que manda el cliente.
+* Números correlativos (orden, factura) los genera la base con `GENERATED ALWAYS AS IDENTITY` — nunca el cliente.
+* Centralizar formato de moneda en `lib/format-currency.ts`.
+
+## Verificación antes de entregar un cambio
+
+1. `npx tsc --noEmit` pasa sin errores
+2. No hay imports rotos ni `any`
+3. Ningún archivo supera 300 líneas
+4. Si toca Supabase: RLS cubre el caso (incl. `WITH CHECK`) + correr `get_advisors` del MCP
+5. Si toca pagos: la validación del webhook y el cálculo server-side del total están intactos
+6. Si el cambio es grande: `npm run build` pasa
+
+## Arquitectura Enterprise (SaaS / multi-tienda)
+
+1. **Bounded Contexts**: fracturar features grandes en dominios raíz para lazy-loading.
+2. **Query Keys estandarizadas**: `["dominio", "entidad", id]`.
+3. **Multi-tenancy**: si aplica, todas las tablas con `org_id`/`tienda_id` y RLS que valide pertenencia (con `WITH CHECK`).
