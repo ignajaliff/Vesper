@@ -4,10 +4,25 @@ export type Categoria = {
   nombre: string
 }
 
+/**
+ * Secciones comerciales de la home. Un producto puede estar en varias.
+ *
+ * Al conectar Supabase esto pasa a ser una tabla `categorias` + tabla puente,
+ * o columnas booleanas en `productos` según cómo lo administre el negocio.
+ */
+export type Coleccion =
+  | "destacado"
+  | "tres-por-dos"
+  | "novedad"
+  | "oferta"
+  | "promocion"
+
 export type Producto = {
   id: string
   slug: string
   nombre: string
+  /** Casa perfumera. */
+  marca: string
   descripcion: string | null
   /** Precio de venta actual. */
   precio: number
@@ -17,6 +32,8 @@ export type Producto = {
   activo: boolean
   imagen_url: string | null
   envio_gratis: boolean
+  /** Secciones de la home en las que aparece. */
+  colecciones: Coleccion[]
   created_at: string
   updated_at: string
 }

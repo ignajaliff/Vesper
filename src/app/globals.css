@@ -7,9 +7,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-fraunces);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -46,75 +46,95 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  --color-marca-profundo: var(--marca-profundo);
 }
 
+/*
+ * Paleta de marca de Vesper — cuatro colores, sin intermedios inventados:
+ *
+ *   Azul del logo   #104FAC  → --primary  (muestreado del PNG del wordmark)
+ *   Azul oscuro     #0A2E66  → --accent   (fondos de marca, hover del azul)
+ *   Negro puro      #000000  → --foreground
+ *   Blanco puro     #FFFFFF  → --background
+ *
+ * Los grises son el negro a opacidad reducida, no colores nuevos.
+ * Todo el color de marca vive acá: ningún componente hardcodea hex.
+ */
 :root {
   --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --foreground: oklch(0 0 0);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0 0 0);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --popover-foreground: oklch(0 0 0);
+  --primary: oklch(0.446 0.183 262.9);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.968 0 0);
+  --secondary-foreground: oklch(0 0 0);
+  --muted: oklch(0.968 0 0);
+  --muted-foreground: oklch(0.45 0 0);
+  --accent: oklch(0.301 0.129 264.5);
+  --accent-foreground: oklch(1 0 0);
+  /* Azul de marca en su versión más profunda (~#061A3D): reservado a la cinta
+     de anuncios, que necesita más peso que el accent para separarse del header. */
+  --marca-profundo: oklch(0.208 0.088 264.8);
+  --destructive: oklch(0.446 0.183 262.9);
+  --border: oklch(0.9 0 0);
+  --input: oklch(0.9 0 0);
+  --ring: oklch(0.446 0.183 262.9);
+  --chart-1: oklch(0.446 0.183 262.9);
+  --chart-2: oklch(0.301 0.129 264.5);
+  --chart-3: oklch(0.6 0.13 262);
+  --chart-4: oklch(0.45 0 0);
+  --chart-5: oklch(0 0 0);
+  --radius: 0.25rem;
+  --sidebar: oklch(0.968 0 0);
+  --sidebar-foreground: oklch(0 0 0);
+  --sidebar-primary: oklch(0.446 0.183 262.9);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.301 0.129 264.5);
+  --sidebar-accent-foreground: oklch(1 0 0);
+  --sidebar-border: oklch(0.9 0 0);
+  --sidebar-ring: oklch(0.446 0.183 262.9);
 }
 
+/*
+ * Contraparte oscura: se invierte negro/blanco y el azul del logo sube de
+ * luminosidad para mantener contraste legible sobre negro.
+ */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: oklch(0 0 0);
+  --foreground: oklch(1 0 0);
+  --card: oklch(0.16 0 0);
+  --card-foreground: oklch(1 0 0);
+  --popover: oklch(0.16 0 0);
+  --popover-foreground: oklch(1 0 0);
+  --primary: oklch(0.62 0.166 262.9);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.2 0 0);
+  --secondary-foreground: oklch(1 0 0);
+  --muted: oklch(0.2 0 0);
+  --muted-foreground: oklch(0.72 0 0);
+  --accent: oklch(0.301 0.129 264.5);
+  --accent-foreground: oklch(1 0 0);
+  --marca-profundo: oklch(0.208 0.088 264.8);
+  --destructive: oklch(0.62 0.166 262.9);
+  --border: oklch(1 0 0 / 14%);
+  --input: oklch(1 0 0 / 18%);
+  --ring: oklch(0.62 0.166 262.9);
+  --chart-1: oklch(0.62 0.166 262.9);
+  --chart-2: oklch(0.45 0.15 263);
+  --chart-3: oklch(0.75 0.11 262);
+  --chart-4: oklch(0.72 0 0);
+  --chart-5: oklch(1 0 0);
+  --sidebar: oklch(0.16 0 0);
+  --sidebar-foreground: oklch(1 0 0);
+  --sidebar-primary: oklch(0.62 0.166 262.9);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.301 0.129 264.5);
+  --sidebar-accent-foreground: oklch(1 0 0);
+  --sidebar-border: oklch(1 0 0 / 14%);
+  --sidebar-ring: oklch(0.62 0.166 262.9);
 }
 
 @layer base {
@@ -126,5 +146,144 @@
   }
   html {
     @apply font-sans;
+  }
+}
+
+@utility font-heading {
+  font-family: var(--font-heading);
+}
+
+/*
+ * Ojal de sección: versalita espaciada que rotula bloques ("Best sellers",
+ * "Novedades"). Es el recurso tipográfico que más define la voz editorial.
+ */
+@utility eyebrow {
+  font-size: 0.6875rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+/* Filete corto centrado que acompaña a los títulos de sección. */
+@utility filete {
+  display: block;
+  width: 2.5rem;
+  height: 1px;
+  background-color: var(--color-foreground);
+  opacity: 0.35;
+}
+
+/*
+ * Marquesina: desplaza la pista de derecha a izquierda en loop continuo.
+ * El contenido se repite en el markup y se corre exactamente -50%, así el
+ * salto del reinicio cae en un punto idéntico y no se ve el corte.
+ * La duración la fija cada instancia con `animation-duration` inline.
+ */
+@keyframes marquesina {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* Sentido inverso: arranca corrida -50% y vuelve a 0, así el texto viaja
+   hacia la derecha sin dejar hueco en ningún extremo. */
+@keyframes marquesina-inversa {
+  from {
+    transform: translateX(-50%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@utility marquesina-pista {
+  animation-name: marquesina;
+  animation-duration: 32s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@utility marquesina-pista-inv {
+  animation-name: marquesina-inversa;
+  animation-duration: 32s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+/* Respeta a quien pide menos movimiento: las cintas quedan quietas. */
+@media (prefers-reduced-motion: reduce) {
+  .marquesina-pista,
+  .marquesina-pista-inv {
+    animation: none;
+  }
+}
+
+/*
+ * Pantalla de carga: el wordmark se dibuja trazo a trazo y después se rellena.
+ *
+ * `stroke-dashoffset` va de la longitud total del contorno a 0, así el trazo
+ * avanza como si una pluma escribiera la palabra. La longitud de cada path la
+ * aporta el componente en `--largo`.
+ *
+ * RENDIMIENTO: no animar `filter: blur()` acá. Una versión previa lo hacía
+ * sobre ~20 elementos y el framerate caía a 54 FPS con saltos de 83 ms, que se
+ * percibían como ráfagas. `stroke-dashoffset` y `opacity` se componen sin
+ * repintar.
+ */
+@keyframes trazo-dibujar {
+  from {
+    stroke-dashoffset: var(--largo);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@utility logo-trazo {
+  stroke-dasharray: var(--largo);
+  stroke-dashoffset: var(--largo);
+  animation: trazo-dibujar 2.2s cubic-bezier(0.55, 0.05, 0.35, 1) forwards;
+}
+
+/* El relleno entra cuando el trazo ya recorrió casi toda la palabra. */
+@keyframes trazo-rellenar {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@utility logo-relleno {
+  opacity: 0;
+  animation: trazo-rellenar 0.85s ease-out forwards;
+}
+
+/*
+ * El trazo se apaga al entrar el relleno: si queda encima, su línea pisa el
+ * borde de los huecos internos y los ojos de la "e" y la "p" se ven tapados.
+ */
+@keyframes trazo-desvanecer {
+  to {
+    opacity: 0;
+  }
+}
+
+@utility logo-trazo-salida {
+  animation: trazo-desvanecer 0.5s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo-trazo {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+  .logo-relleno {
+    animation: none;
+    opacity: 1;
   }
 }

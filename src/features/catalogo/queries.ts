@@ -1,5 +1,5 @@
 import { PRODUCTOS_MOCK } from "./mock"
-import { type Producto } from "./types"
+import { type Coleccion, type Producto } from "./types"
 
 /**
  * DAL del catálogo — lecturas server, tipadas.
@@ -22,18 +22,40 @@ export async function getProductos(): Promise<Producto[]> {
   return PRODUCTOS_MOCK
 }
 
-/** Destacados de la home ("BEST SELLERS"). */
-export async function getProductosDestacados(limite = 4): Promise<Producto[]> {
-  // TODO(supabase): filtrar por `destacado = true` y limitar en la query.
-  return PRODUCTOS_MOCK.slice(0, limite)
+/** Productos de una sección de la home (best sellers, 3x2, novedades…). */
+export async function getProductosPorColeccion(
+  coleccion: Coleccion,
+  limite = 12
+): Promise<Producto[]> {
+  // TODO(supabase): join con la tabla de colecciones, o `where <flag> = true`.
+  return PRODUCTOS_MOCK.filter((p) => p.colecciones.includes(coleccion)).slice(
+    0,
+    limite
+  )
 }
 
-/** Productos con precio de lista mayor al de venta ("OFERTAS"). */
-export async function getProductosEnOferta(limite = 4): Promise<Producto[]> {
+/** Destacados de la home ("Los más elegidos"). */
+export async function getProductosDestacados(limite = 12): Promise<Producto[]> {
+  return getProductosPorColeccion("destacado", limite)
+}
+
+/**
+ * Productos con precio de lista mayor al de venta ("Ofertas").
+ *
+ * Se ordenan por descuento descendente: además de ser lo que corresponde
+ * comercialmente, evita que la home muestre en "Ofertas" los mismos primeros
+ * productos que ya salieron en "Los más elegidos".
+ */
+export async function getProductosEnOferta(limite = 12): Promise<Producto[]> {
   // TODO(supabase): where precio_lista is not null and precio_lista > precio
+  //   order by (precio_lista - precio) / precio_lista desc
   return PRODUCTOS_MOCK.filter(
     (p) => p.precio_lista !== null && p.precio_lista > p.precio
-  ).slice(0, limite)
+  )
+    .map((p) => ({ producto: p, off: 1 - p.precio / p.precio_lista! }))
+    .sort((a, b) => b.off - a.off)
+    .slice(0, limite)
+    .map(({ producto }) => producto)
 }
 
 export async function getProductoBySlug(slug: string): Promise<Producto | null> {

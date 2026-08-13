@@ -8,6 +8,11 @@ export type HeroSlide = {
   imagenUrl: string | null
 }
 
+/**
+ * Las fotos de fondo son oscuras y dejan el aire a la izquierda, que es donde
+ * cae el texto. El Hero las trata con velo oscuro y tipografía clara: si en el
+ * futuro se cargan fotos claras, hay que revisar ese contraste.
+ */
 export const HERO_SLIDES: HeroSlide[] = [
   {
     id: "originales",
@@ -15,7 +20,7 @@ export const HERO_SLIDES: HeroSlide[] = [
     bajada: "Fragancias árabes, de diseñador y selectivas. Envío gratis a todo el país.",
     ctaLabel: "Ver catálogo",
     ctaHref: "/productos",
-    imagenUrl: null,
+    imagenUrl: "/fondo-hero1.webp",
   },
   {
     id: "transferencia",
@@ -23,7 +28,7 @@ export const HERO_SLIDES: HeroSlide[] = [
     bajada: "El descuento se aplica solo al finalizar tu compra.",
     ctaLabel: "Aprovechar descuento",
     ctaHref: "/productos",
-    imagenUrl: null,
+    imagenUrl: "/fondo-hero2.webp",
   },
   {
     id: "decants",
@@ -31,6 +36,6 @@ export const HERO_SLIDES: HeroSlide[] = [
     bajada: "Llevá tres decants de 5 ml y pagá dos. Ideal para probar antes del frasco.",
     ctaLabel: "Ver decants",
     ctaHref: "/productos",
-    imagenUrl: null,
+    imagenUrl: "/fondo-hero1.webp",
   },
 ]
