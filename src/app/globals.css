@@ -164,6 +164,38 @@
   font-weight: 500;
 }
 
+/*
+ * Resaltador: la financiación pasada con marcador azul.
+ *
+ * El trazo CUBRE TODO EL ALTO del texto, con aire arriba y abajo — no es un
+ * subrayado grueso. Con `background-size` bajo (media altura, anclado al pie)
+ * se lee como una línea debajo de las palabras, no como resaltado.
+ *
+ * Es un degradado y no un `background-color` plano: los extremos salen difusos
+ * como cuando el fibrón arranca y levanta. La opacidad se mantiene baja a
+ * propósito — el azul pleno tapa los números, que es justo lo que hay que poder
+ * leer.
+ *
+ * `box-decoration-break` mantiene el trazo parejo si el renglón se parte en dos.
+ */
+@utility resaltador {
+  background-image: linear-gradient(
+    to right,
+    color-mix(in oklch, var(--color-primary) 14%, transparent),
+    color-mix(in oklch, var(--color-primary) 26%, transparent) 5%,
+    color-mix(in oklch, var(--color-primary) 26%, transparent) 95%,
+    color-mix(in oklch, var(--color-primary) 14%, transparent)
+  );
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  /* El aire vertical lo da el padding: sin él el trazo queda pegado a las
+     letras y se ve apretado. */
+  padding: 0.15em 0.35em;
+  border-radius: 0.125rem;
+}
+
 /* Filete corto centrado que acompaña a los títulos de sección. */
 @utility filete {
   display: block;
@@ -221,69 +253,3 @@
   }
 }
 
-/*
- * Pantalla de carga: el wordmark se dibuja trazo a trazo y después se rellena.
- *
- * `stroke-dashoffset` va de la longitud total del contorno a 0, así el trazo
- * avanza como si una pluma escribiera la palabra. La longitud de cada path la
- * aporta el componente en `--largo`.
- *
- * RENDIMIENTO: no animar `filter: blur()` acá. Una versión previa lo hacía
- * sobre ~20 elementos y el framerate caía a 54 FPS con saltos de 83 ms, que se
- * percibían como ráfagas. `stroke-dashoffset` y `opacity` se componen sin
- * repintar.
- */
-@keyframes trazo-dibujar {
-  from {
-    stroke-dashoffset: var(--largo);
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-@utility logo-trazo {
-  stroke-dasharray: var(--largo);
-  stroke-dashoffset: var(--largo);
-  animation: trazo-dibujar 2.2s cubic-bezier(0.55, 0.05, 0.35, 1) forwards;
-}
-
-/* El relleno entra cuando el trazo ya recorrió casi toda la palabra. */
-@keyframes trazo-rellenar {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@utility logo-relleno {
-  opacity: 0;
-  animation: trazo-rellenar 0.85s ease-out forwards;
-}
-
-/*
- * El trazo se apaga al entrar el relleno: si queda encima, su línea pisa el
- * borde de los huecos internos y los ojos de la "e" y la "p" se ven tapados.
- */
-@keyframes trazo-desvanecer {
-  to {
-    opacity: 0;
-  }
-}
-
-@utility logo-trazo-salida {
-  animation: trazo-desvanecer 0.5s ease-out forwards;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .logo-trazo {
-    animation: none;
-    stroke-dashoffset: 0;
-  }
-  .logo-relleno {
-    animation: none;
-    opacity: 1;
-  }
-}

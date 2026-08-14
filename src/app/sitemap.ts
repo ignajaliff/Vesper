@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next"
 
-import { getSlugsActivos } from "@/features/catalogo/queries"
+import { getSlugsActivos, getSlugsMarcas } from "@/features/catalogo/queries"
 import { SITE } from "@/lib/site"
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
@@ -11,10 +11,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE.url}/contacto`, changeFrequency: "monthly", priority: 0.4 },
   ]
 
-  const productos = await getSlugsActivos()
+  const [productos, marcas] = await Promise.all([
+    getSlugsActivos(),
+    getSlugsMarcas(),
+  ])
 
   return [
     ...estaticas,
+    ...marcas.map((m) => ({
+      url: `${SITE.url}/marcas/${m.marca}`,
+      changeFrequency: "weekly" as const,
+      priority: 0.7,
+    })),
     ...productos.map((p) => ({
       url: `${SITE.url}/productos/${p.slug}`,
       changeFrequency: "weekly" as const,

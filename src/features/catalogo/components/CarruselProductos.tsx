@@ -11,26 +11,24 @@ import { ProductoCard } from "./ProductoCard"
 
 type CarruselProductosProps = {
   titulo: string
-  /** Versalita sobre el título ("Selección", "Temporada"). */
-  ojal?: string
-  descripcion?: string
   productos: Producto[]
-  /** CTA al final del encabezado. */
+  /** CTA al otro extremo del encabezado. */
   verMasHref?: string
   cantidadPrioritaria?: number
 }
 
 /**
- * Sección de home: encabezado editorial + fila de productos desplazable.
+ * Sección de home: título + fila de productos desplazable.
  *
  * Muestra 4 productos por vista en desktop y se corre de a una página con las
  * flechas o arrastrando. Usa scroll nativo con `snap` en vez de una librería:
  * funciona sin JS, respeta el gesto táctil y no suma dependencias.
+ *
+ * Las flechas van **flotando sobre los extremos de la fila**, no en el
+ * encabezado: quedan a la altura de las cards, que es donde el ojo las busca.
  */
 export function CarruselProductos({
   titulo,
-  ojal,
-  descripcion,
   productos,
   verMasHref,
   cantidadPrioritaria = 0,
@@ -70,24 +68,26 @@ export function CarruselProductos({
 
   if (productos.length === 0) return null
 
+  /* Ambas flechas comparten posición y estilo: solo cambian de lado. */
+  const claseFlecha =
+    "bg-background/95 absolute top-1/2 z-10 hidden size-10 -translate-y-1/2 rounded-full shadow-md backdrop-blur-sm disabled:pointer-events-none disabled:opacity-0 sm:flex"
+
   return (
-    <section className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6 lg:py-16">
-      <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          {ojal && <p className="eyebrow text-primary mb-2.5">{ojal}</p>}
+    <section className="mx-auto w-full max-w-[100rem] px-4 py-14 sm:px-6 lg:px-10 lg:py-16">
+      {/*
+        Título centrado con "Ver todo" a la derecha. Se resuelve con grid de
+        tres columnas y una celda vacía a la izquierda, no con `justify-between`:
+        así el título queda centrado respecto de la SECCIÓN y no del hueco que
+        deja el CTA, que lo corría a la izquierda.
+      */}
+      <header className="mb-8 grid grid-cols-[1fr_auto_1fr] items-end gap-4">
+        <span aria-hidden />
 
-          <h2 className="font-heading text-3xl leading-tight font-normal tracking-tight text-balance sm:text-[2rem]">
-            {titulo}
-          </h2>
+        <h2 className="font-heading text-center text-3xl leading-tight font-normal tracking-tight text-balance sm:text-[2rem]">
+          {titulo}
+        </h2>
 
-          {descripcion && (
-            <p className="text-muted-foreground mt-2.5 max-w-md text-sm leading-relaxed text-pretty">
-              {descripcion}
-            </p>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
+        <div className="flex justify-end">
           {verMasHref && (
             <Button asChild variant="link" className="group h-auto p-0 text-sm">
               <Link href={verMasHref}>
@@ -96,56 +96,60 @@ export function CarruselProductos({
               </Link>
             </Button>
           )}
-
-          {/* Flechas: solo desktop. En táctil se arrastra. */}
-          <div className="ml-2 hidden gap-1.5 sm:flex">
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Anterior"
-              disabled={alInicio}
-              onClick={() => mover(-1)}
-              className="size-9 rounded-full"
-            >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Siguiente"
-              disabled={alFinal}
-              onClick={() => mover(1)}
-              className="size-9 rounded-full"
-            >
-              <ChevronRight className="size-4" />
-            </Button>
-          </div>
         </div>
       </header>
 
-      <ul
-        ref={pista}
-        /* `snap-x` alinea cada card al detener el arrastre. El scrollbar se
-           oculta pero el scroll sigue siendo nativo y accesible. */
-        className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      >
-        {productos.map((producto, i) => (
-          <li
-            key={producto.id}
-            className={cn(
-              "shrink-0 snap-start",
-              // 4 por vista en desktop, 2 en tablet, 1.4 en mobile (la card
-              // cortada sugiere que hay más para el costado).
-              "w-[calc((100%-0.75rem)/1.4)] sm:w-[calc((100%-1rem)/2)] lg:w-[calc((100%-3rem)/4)]"
-            )}
-          >
-            <ProductoCard
-              producto={producto}
-              prioridad={i < cantidadPrioritaria}
-            />
-          </li>
-        ))}
-      </ul>
+      {/* `relative` ancla las flechas a los extremos de la fila. */}
+      <div className="relative">
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="Anterior"
+          disabled={alInicio}
+          onClick={() => mover(-1)}
+          className={cn(claseFlecha, "-left-4 lg:-left-5")}
+        >
+          <ChevronLeft className="size-4" />
+        </Button>
+
+        <ul
+          ref={pista}
+          /* `snap-x` alinea cada card al detener el arrastre. El scrollbar se
+             oculta pero el scroll sigue siendo nativo y accesible. */
+          className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {productos.map((producto, i) => (
+            <li
+              key={producto.id}
+              className={cn(
+                // `flex` estira la card a la altura de la fila: sin eso, las
+                // que tienen selector de ml quedan más altas que el resto.
+                "flex shrink-0 snap-start",
+                // 1.4 en mobile (la card cortada sugiere que hay más para el
+                // costado), 2 en tablet, 4 en desktop y 5 en pantallas anchas:
+                // con la sección a todo el ancho, 4 cards quedaban enormes.
+                "w-[calc((100%-0.75rem)/1.4)] sm:w-[calc((100%-1rem)/2)] lg:w-[calc((100%-3rem)/4)] xl:w-[calc((100%-4rem)/5)]"
+              )}
+            >
+              <ProductoCard
+                producto={producto}
+                prioridad={i < cantidadPrioritaria}
+              />
+            </li>
+          ))}
+        </ul>
+
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="Siguiente"
+          disabled={alFinal}
+          onClick={() => mover(1)}
+          className={cn(claseFlecha, "-right-4 lg:-right-5")}
+        >
+          <ChevronRight className="size-4" />
+        </Button>
+      </div>
     </section>
   )
 }

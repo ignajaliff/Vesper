@@ -1,3 +1,4 @@
+import { aSlug } from "@/lib/slug"
 import { type Coleccion, type Producto } from "./types"
 
 /**
@@ -9,12 +10,29 @@ import { type Coleccion, type Producto } from "./types"
  */
 const base = {
   descripcion: null,
+  presentaciones: [],
+  notas: null,
+  caracteristicas: null,
   activo: true,
   envio_gratis: true,
   imagen_url: null,
+  imagen_hover_url: null,
   created_at: "2026-01-01T00:00:00.000Z",
   updated_at: "2026-01-01T00:00:00.000Z",
 } satisfies Partial<Producto>
+
+/** Datos de detalle: solo los productos con foto y ficha cargada los traen. */
+type Detalle = Partial<
+  Pick<
+    Producto,
+    | "descripcion"
+    | "presentaciones"
+    | "notas"
+    | "caracteristicas"
+    | "imagen_url"
+    | "imagen_hover_url"
+  >
+>
 
 /** Arma un producto con id y slug derivados del índice y el nombre. */
 function crear(
@@ -24,14 +42,10 @@ function crear(
   precio: number,
   precio_lista: number | null,
   stock: number,
-  colecciones: Coleccion[]
+  colecciones: Coleccion[],
+  detalle: Detalle = {}
 ): Producto {
-  const slug = `${marca} ${nombre}`
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
+  const slug = aSlug(`${marca} ${nombre}`)
 
   return {
     ...base,
@@ -43,13 +57,56 @@ function crear(
     precio_lista,
     stock,
     colecciones,
+    ...detalle,
   }
 }
 
 export const PRODUCTOS_MOCK: Producto[] = [
   // — Más elegidos —
+  /*
+   * Productos con fotos y ficha completa: sirven de referencia del formato al
+   * cargar el resto. Las notas y características son las que publica cada casa;
+   * los precios y los tamaños son inventados, como en todo el mock.
+   */
+  crear(33, "Bharara", "King EDP 100ml", 119000, 168000, 14, ["destacado", "oferta"], {
+    // Principal: frasco solo sobre fondo claro. Al pasar el cursor cambia a la
+    // toma con la caja, que es la que muestra el producto completo.
+    imagen_url: "/productos/bharara-king-sombra.webp",
+    imagen_hover_url: "/productos/bharara-king.webp",
+    presentaciones: [{ ml: 50 }, { ml: 100, predeterminada: true }],
+    descripcion:
+      "Un ámbar especiado de estela larga, construido sobre vainilla y maderas. Abre dulce y cítrico, y a las pocas horas deja un fondo cálido que se queda en la ropa. Pensado para la noche y para el frío.",
+    notas: {
+      salida: ["Manzana", "Bergamota", "Canela"],
+      corazon: ["Jazmín", "Nuez moscada", "Pachulí"],
+      base: ["Vainilla", "Ámbar", "Sándalo", "Almizcle"],
+    },
+    caracteristicas: {
+      duracion: "8 a 10 horas",
+      estela: "alta",
+      uso: "Noche y salidas",
+      epoca: "Otoño e invierno",
+    },
+  }),
   crear(1, "Armaf", "Odyssey Homme White EDP 100ml", 93500, 135000, 12, ["destacado", "oferta"]),
-  crear(2, "Armaf", "Club De Nuit Intense EDT 105ml", 88900, 119000, 8, ["destacado", "oferta"]),
+  crear(2, "Armaf", "Club De Nuit Intense EDT 105ml", 88900, 119000, 8, ["destacado", "oferta"], {
+    imagen_url: "/productos/armaf-club-de-nuit-sombra.webp",
+    imagen_hover_url: "/productos/armaf-club-de-nuit.webp",
+    presentaciones: [{ ml: 30 }, { ml: 105, predeterminada: true }, { ml: 200 }],
+    descripcion:
+      "El árabe más conocido de la casa: una salida cítrica y frutal que baja a piña, abedul y almizcle. Proyecta fuerte las primeras horas y deja una estela ahumada que aguanta el día entero.",
+    notas: {
+      salida: ["Limón", "Piña", "Bergamota", "Grosella negra"],
+      corazon: ["Abedul", "Jazmín", "Rosa"],
+      base: ["Almizcle", "Ámbar", "Vainilla", "Pachulí"],
+    },
+    caracteristicas: {
+      duracion: "8 a 12 horas",
+      estela: "alta",
+      uso: "Diario y salidas",
+      epoca: "Todo el año",
+    },
+  }),
   crear(3, "Al Haramain", "Amber Oud Gold EDP 120ml", 164000, null, 5, ["destacado"]),
   crear(4, "Xerjoff", "Erba Pura EDP 100ml", 412000, 520000, 3, ["destacado", "oferta"]),
   crear(5, "Lattafa", "Asad EDP 100ml", 76500, 98000, 20, ["destacado", "oferta"]),

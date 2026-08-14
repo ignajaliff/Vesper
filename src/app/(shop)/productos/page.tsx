@@ -13,7 +13,7 @@ export default async function ProductosPage() {
   const productos = await getProductos()
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
+    <div className="mx-auto w-full max-w-[100rem] px-4 py-16 sm:px-6 lg:px-10">
       <header className="mb-14 max-w-xl">
         <p className="eyebrow text-destructive">Catálogo</p>
 

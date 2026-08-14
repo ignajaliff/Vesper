@@ -42,9 +42,15 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
+    /*
+      `carga-bloqueada` se renderiza YA en el servidor y la saca el script de
+      `CargaInicial` al retirar el velo. Si en cambio la agregara el script,
+      React vería un atributo `class` distinto al del HTML del server y
+      avisaría "A tree hydrated but some attributes ... didn't match".
+    */
     <html
       lang="es"
-      className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable} carga-bloqueada h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
         {/* Va primero: tiene que pintarse antes que cualquier contenido. */}

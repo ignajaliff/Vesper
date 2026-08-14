@@ -1,3 +1,5 @@
+import { aSlug } from "./slug"
+
 export const SITE = {
   nombre: "Vesper",
   descripcionCorta: "Perfumería de autor",
@@ -197,31 +199,46 @@ export const MEDIOS_ENVIO: Medio[] = [
  * Marcas que trabajamos, para la franja de la home.
  *
  * Son wordmarks tipográficos, no isologos: usar los logos reales de cada casa
- * requiere sus archivos y su permiso de uso. `href` apunta al catálogo
- * filtrado; hasta que existan las páginas de marca, todas van a `/productos`.
+ * requiere sus archivos y su permiso de uso.
  */
 export type Marca = {
   nombre: string
   href: string
 }
 
-export const MARCAS: Marca[] = [
-  { nombre: "Jean Paul Gaultier", href: "/productos" },
-  { nombre: "Lattafa", href: "/productos" },
-  { nombre: "Afnan", href: "/productos" },
-  { nombre: "Rabanne", href: "/productos" },
-  { nombre: "Valentino", href: "/productos" },
-  { nombre: "Xerjoff", href: "/productos" },
-  { nombre: "Al Haramain", href: "/productos" },
-  { nombre: "French Avenue", href: "/productos" },
-  { nombre: "Rayhaan", href: "/productos" },
-  { nombre: "Carolina Herrera", href: "/productos" },
-  { nombre: "Montale", href: "/productos" },
-  { nombre: "Mancera", href: "/productos" },
-  { nombre: "Givenchy", href: "/productos" },
-  { nombre: "Cher", href: "/productos" },
-  { nombre: "Armaf", href: "/productos" },
-  { nombre: "Tom Ford", href: "/productos" },
-  { nombre: "Dior", href: "/productos" },
-  { nombre: "Versace", href: "/productos" },
-]
+/**
+ * El `href` se DERIVA del nombre con `aSlug`, no se escribe a mano.
+ *
+ * `getProductosPorMarca` compara contra `aSlug(producto.marca)`, así que si el
+ * link se cargara suelto un typo daría una página vacía sin ningún error: la
+ * ruta existiría y la query no encontraría nada. Derivándolo, el link y el
+ * filtro salen de la misma función y no pueden desincronizarse.
+ *
+ * El nombre debe coincidir exactamente con `productos.marca`.
+ */
+const NOMBRES_MARCAS = [
+  "Jean Paul Gaultier",
+  "Lattafa",
+  "Afnan",
+  "Rabanne",
+  "Valentino",
+  "Xerjoff",
+  "Al Haramain",
+  "French Avenue",
+  "Rayhaan",
+  "Carolina Herrera",
+  "Montale",
+  "Mancera",
+  "Givenchy",
+  "Cher",
+  "Armaf",
+  "Tom Ford",
+  "Dior",
+  "Versace",
+  "Bharara",
+] as const
+
+export const MARCAS: Marca[] = NOMBRES_MARCAS.map((nombre) => ({
+  nombre,
+  href: `/marcas/${aSlug(nombre)}`,
+}))

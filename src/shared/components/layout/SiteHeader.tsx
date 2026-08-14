@@ -9,6 +9,7 @@ import { ANUNCIOS, MARQUESINA, SITE } from "@/lib/site"
 import { cn } from "@/lib/utils"
 import { Button } from "@/shared/components/ui/button"
 import { Buscador } from "./Buscador"
+import { ContadorCarrito, ContadorFavoritos } from "./ContadorAcceso"
 import { Marquesina } from "./Marquesina"
 import { MobileNav } from "./MobileNav"
 import { NavPrincipal } from "./NavPrincipal"
@@ -84,10 +85,11 @@ export function SiteHeader() {
               variant="ghost"
               size="icon"
               aria-label="Favoritos"
-              className="hover:text-primary size-11 rounded-sm"
+              className="hover:text-primary relative size-11 rounded-sm"
             >
               <Link href="/favoritos">
                 <Heart className="size-[1.375rem]" strokeWidth={1.5} />
+                <ContadorFavoritos />
               </Link>
             </Button>
 
@@ -108,10 +110,11 @@ export function SiteHeader() {
               variant="ghost"
               size="icon"
               aria-label="Ver carrito"
-              className="hover:text-primary size-11 rounded-sm"
+              className="hover:text-primary relative size-11 rounded-sm"
             >
               <Link href="/carrito">
                 <ShoppingBag className="size-[1.375rem]" strokeWidth={1.5} />
+                <ContadorCarrito />
               </Link>
             </Button>
           </div>
